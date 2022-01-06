@@ -96,7 +96,7 @@ class GraspNetModel:
                 confidence_weight=self.opt.confidence_weight,
                 device=self.device)
             self.loss = self.reconstruction_loss + self.confidence_loss
-        elif self.opt.arch == 'evaluator':
+        elif self.opt.arch == 'evaluator' or self.opt.arch == 'collision':
             grasp_classification, confidence = out
             self.classification_loss, self.confidence_loss = self.criterion(
                 grasp_classification.squeeze(),

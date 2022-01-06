@@ -59,9 +59,12 @@ def make_parser(argv):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--grasp_sampler_folder', type=str, default='')
     parser.add_argument('--grasp_evaluator_folder', type=str, default='')
+    parser.add_argument('--grasp_collision_folder', type=str, default='') ###
+    parser.add_argument('--collision_threshold', type=float, default=0.01) ###
     parser.add_argument('--eval_data_folder', type=str, default='')
     parser.add_argument('--generate_data_if_missing', type=int, default=0)
     parser.add_argument('--dataset_root_folder', type=str, default='')
+    parser.add_argument('--sceneset_root_folder', type=str, default=None) ###
     parser.add_argument('--num_experiments', type=int, default=100)
     parser.add_argument('--eval_split', type=str, default='test')
     parser.add_argument('--eval_grasp_evaluator', type=int, default=0)
@@ -96,12 +99,11 @@ class Evaluator():
             occlusion_nclusters=0,
             occlusion_dropout_rate=0.,
             use_uniform_quaternions=False,
-            ratio_of_grasps_used=1,
+            ratio_of_grasps_used=1
         )
         self._cfg = cfg
         self._grasp_estimator = grasp_estimator.GraspEstimator(cfg)
         os.environ['CUDA_VISIBLE_DEVICES'] = str(self._cfg.gpu)
-        self._sess = tf.Session()
         del os.environ['CUDA_VISIBLE_DEVICES']
         self._grasp_estimator.build_network()
         self._eval_grasp_evaluator = eval_grasp_evaluator
@@ -125,48 +127,34 @@ class Evaluator():
             print('changing object to ', obj_grasp_data[-2])
             self._grasp_reader.change_object(obj_grasp_data[-2],
                                              obj_grasp_data[-1])
-            pc, camera_pose, in_camera_pose = self._grasp_reader.render_random_scene(
-                None)
+            pc, camera_pose, in_camera_pose = self._grasp_reader.render_random_scene(None) #???
             folder_path = file_path[:file_path.rfind('/')]
             create_directory(folder_path)
 
             print('writing {}'.format(file_path))
             np.save(file_path, {'json': json_path, 'obj_pose': obj_pose, 'camera_pose': in_camera_pose})
+
         else:
-                    
-                   
-                   
-                
             d = np.load(file_path).item()
             json_path = d['json']
             obj_pose = d['obj_pose']
             obj_grasp_data = self._grasp_reader.read_grasp_file(
-                os.path.join(self._cfg.dataset_root_folder, json_path), True
-            )in_camera_pose = d['camera_pose']
+                os.path.join(self._cfg.dataset_root_folder, json_path), True)
+            in_camera_pose = d['camera_pose']
             self._grasp_reader.change_object(obj_grasp_data[-2], obj_grasp_data[-1])
-            pc, camera_pose, _= self._grasp_reader.render_random
-                                            _scene(in_camera_pose)
-         
-                
+            pc, camera_pose, _= self._grasp_reader.render_random_scene(in_camera_pose)
+
         pos_grasps = np.matmul(np.expand_dims(camera_pose, 0), obj_grasp_data[0])
-        neg_grasps = np.matmul(np.expand_dims(camera_pose, 0),
-                               obj_grasp_data[2])
-        grasp_labels = np.hstack(
-                              
-            (np.ones(pos_grasps.shape[0]), np.zeros(neg_grasps.shape[0]))).astype(np.int32)
-        grasps = np.concatenate((pos_grasp
-            s, neg_grasps), 0)
+        neg_grasps = np.matmul(np.expand_dims(camera_pose, 0), obj_grasp_data[2])
+        grasp_labels = np.hstack((np.ones(pos_grasps.shape[0]), np.zeros(neg_grasps.shape[0]))).astype(np.int32)
+        grasps = np.concatenate((pos_grasps, neg_grasps), 0)
         
-if visualize:
+        if visualize:
             from visualization_utils import draw_scene
             import mayavi.mlab as mlab
 
             pos_mask = np.logical_and(grasp_labels == 1, np.random.rand(*grasp_labels.shape) < 0.1)
-            neg_mask = np.logical_and(
-                grasp_labels == 0,
-                np.random.rand(*grasp_labels.shape) < 0.01)
-
-                
+            neg_mask = np.logical_and(grasp_labels == 0, np.random.rand(*grasp_labels.shape) < 0.01)        
                
             print(grasps[pos_mask, :, :].shape, grasps[neg_mask, :, :].shape)
             draw_scene(pc, grasps[pos_mask, :, :])
@@ -175,54 +163,34 @@ if visualize:
             draw_scene(pc, grasps[neg_mask, :, :])
             mlab.show()
 
-        return pc[:, :3], grasps, grasp_labels, {'cad_path': obj_grasp_data[-2], 'cad_scale': obj_grasp_data[-1], 'to_canonical_transformation': grasp_data_reader.inverse_transform(camera_pose)}
+        return pc[:, :3], '''TO-DO: SCENEPC,''' grasps, grasp_labels, {'cad_path': obj_grasp_data[-2], 'cad_scale': obj_grasp_data[-1], 'to_canonical_transformation': grasp_data_reader.inverse_transform(camera_pose)}
     
-            
-           
-           
-           
-           
-           
-    }
     def eval_scene(self, file_path, visualize=False):
         """
-          Returns full_results, evaluator_results.
-            full_results: Contains information about grasps in canonical pose, scores,
-              ground truth positive grasps, and also cad path and scale that is used for
-              flex evaluation.
-            evaluator_results: Only contains information for the classification of positive
-              and negative grasps. The info is gt label of each grasp, predicted score for
-              each grasp, and the 4x4 transformation of each grasp.
+        Returns full_results, evaluator_results, collision_results.
+            full_results: Contains information about grasps in canonical pose, scores, ground truth positive grasps, and also cad path and scale that is used for flex evaluation.
+            evaluator_results: Only contains information for the classification of positive and negative grasps. The info is gt label of each grasp, predicted score for each grasp,\
+                               and the 4x4 transformation of each grasp.
+            collision_results: Information for the classification of positive and negative grasps based on cluttered scene.
         """
-        pc, grasps, grasps_label, flex_info = self.read_eval_scene(file_path)
+        pc, scenepc, grasps, grasps_label, flex_info = self.read_eval_scene(file_path)
         canonical_transform = flex_info['to_canonical_transformation']
-        evaluator_result = None
+        evaluator_results = None
+        collision_results = None
         full_results = None
         if self._eval_grasp_evaluator:
-            latents = self._grasp_estimator.sample_latents()
-            output_grasps, output_scores, _ = self._grasp_estimator.predict_grasps(
-                self._sess,
-                pc, latents, 0, grasps_rt=gevaluator_result = (grasps_label, output_scores, output_grasps)
-
-
+            output_grasps, evalscores, collisionscores = self._grasp_estimator.generate_and_refine_grasps(pc, scenepc, collisionnet=True)
+            evaluator_results = (grasps_label, evalscores, output_grasps)
+            collision_results = (grasps_label, collisionscores, output_grasps)
             latents = np.random.rand(self._cfg.num_samples, self._cfg.latent_size) * 4 - 2
             print(pc.shape)
-                                    
-            generated_grasps, generated_scores, _ = self._grasp_estimator.predict_grasps(
-                self._sess,
-                pc,
-                latents,
-                num_refine_steps=self._cfg.num_refine_steps,
-            )
 
             gt_pos_grasps = [g for g, l in zip(grasps, grasps_label) if l == 1]
             gt_pos_grasps = np.asarray(gt_pos_grasps).copy()
             gt_pos_grasps_canonical = np.matmul(canonical_transform, gt_pos_grasps)
-            generated_grasps = np.asarray(generated_grasps)
-                                               
-            print(generated_grasps.shape)
-            generated_grasps_canonical = np.matmul(canonical_transform, generated_grasps)
-            
+            generated_grasps = np.asarray(output_grasps)
+            print(output_grasps.shape)
+            generated_grasps_canonical = np.matmul(canonical_transform, output_grasps)
                                                   
             obj = sample.Object(flex_info['cad_path'])
             obj.rescale(flex_info['cad_scale'])
@@ -236,36 +204,29 @@ if visualize:
             canonical_pc += mesh_mean
             generated_grasps_canonical[:, :3, 3] += mesh_mean
             
-if visualize:
+            if visualize:
                 from visualization_utils import draw_scene
                 import mayavi.mlab as mlab
 
                 draw_scene(canonical_pc, grasps=gt_pos_grasps_canonical, mesh=mesh)
                 mlab.show()
-                          
-                          
 
-                
+                draw_scene(canonical_pc + mesh_mean, grasps=generated_grasps_canonical, mesh=mesh, grasp_scores=collisionscores)
                 mlab.show()
-                          
-                          
-                          
             
-full_results = (generated_grasps_canonical, generated_scores, gt_pos_grasps_canonical, flex_info['cad_path'], flex_info['cad_scale'])
-
+            full_results = (generated_grasps_canonical, evalscores, collisionscores, gt_pos_grasps_canonical, flex_info['cad_path'], flex_info['cad_scale'])               
                            
-                           
-        return full_results, evaluator_result
+        return full_results, evaluator_results, collision_results
 
-    
+    def update_time_stamp(self):
         self._signature = self._get_current_time_stamp()
 
-
+    def _get_current_time_stamp(self):
         """No Comments."""
         now = datetime.datetime.now()
         return now.strftime("%Y-%m-%d_%H-%M")
 
-
+    def eval_all(self, plot_curves):
         """
         Evaluates all of the test scenes.
 
@@ -273,47 +234,43 @@ full_results = (generated_grasps_canonical, generated_scores, gt_pos_grasps_cano
           plot_curves: bool, if True, plots the coressponding figure
             for each of the evaluations.
         """
-        self._grasp_estimator.load_weights(self._sess)
+        #self._grasp_estimator.load_weights(self._sess)
+        # TO-DO: load weights using pytorch and save folders
+        create_directory(self._eval_experiment_folder)
         
-create_directory(self._eval_experiment_folder)
+        num_digits = len(str(self._num_experiments))
         
-num_digits = len(str(self._num_experiments))
-        
-all_eval_results = []
+        all_eval_results = []
         all_full_results = []
         
-for i in range(self._num_experiments):
+        for i in range(self._num_experiments):
             full_result, eval_result = self.eval_scene(os.path.join(self._eval_experiment_folder, 'eval_configs', str(i).zfill(num_digits)) + '.npy', False)
-            if full_result is not None:
-                
-                            
+            if full_result is not None:                    
                 grasps, scores, gt_grasps, cad_path, cad_scale = full_result
                 experiment_folder = os.path.join(self._eval_experiment_folder, 'flex_folder', str(i).zfill(num_digits))
-                flex_outcomes = self.eval_grasps_on_flex(grasps, cad_path, cad
-                                                _scale, experim
-                                                ent_folder)
-                all_full_results.append((grasps, scores, 
-                    flex_outcomes, gt_grasps))
-            
+                flex_outcomes = self.eval_grasps_on_flex(grasps, cad_path, cad_scale, experiment_folder)
+                all_full_results.append((grasps, scores, flex_outcomes, gt_grasps))
                     
-if eval_result is not None:
+            if eval_result is not None:
                 all_eval_results.append(eval_result)
         
-if len(all_eval_results) > 0:
+        if len(all_eval_results) > 0:
             self.metric_classification_mean_ap(
                 [x[0] for x in all_eval_results],
                 [x[1] for x in all_eval_results], 
                 plot_curves)
-if len(all_full_results) > 0:
+
+        if len(all_full_results) > 0:
             self.metric_coverage_success_rate(
-                [x[0] for x in all_full_result[x[1] for x in all_full_results],
-                                              [x[2] for x in all_full_results],
-                                              [x[3] for x in all_full_results],
-                                              plot_curves
-            )                  plot_curves
+                [x[0] for x in all_full_results],
+                [x[1] for x in all_full_results],
+                [x[2] for x in all_full_results],
+                [x[3] for x in all_full_results],
+                plot_curves
+            )
+
     def metric_classification_mean_ap(self, gt_labels_list, scores_list, visualize):
-        """
-                                     
+        """                                 
         Computes the average precision metric for evaluator.
 
         Args:
@@ -332,14 +289,13 @@ if len(all_full_results) > 0:
         if len(gt_labels_list) != len(scores_list):
             raise ValueError("Length of the lists should match")
         
-for gt_labels in gt_labels_list:
+        for gt_labels in gt_labels_list:
             all_gt_labels += [l for l in gt_labels]
         for scores in scores_list:
             all_scores += [s for s in scores]
         
-precision, recall, thresholds = precision_recall_curve(all_gt_labels, all_scores)
-        average_precision = average_precision_score(all_gt_labe
-            ls, all_scores)
+        precision, recall, thresholds = precision_recall_curve(all_gt_labels, all_scores)
+        average_precision = average_precision_score(all_gt_labels, all_scores)
         f1_score = 2 * (precision * recall) / (precision + recall)
 
         best_threshold = thresholds[np.argmax(f1_score)]
@@ -351,27 +307,17 @@ precision, recall, thresholds = precision_recall_curve(all_gt_labels, all_scores
             plt.ylabel('Precision')
             plt.ylim([0.0, 1.05])
             plt.xlim([0.0, 1.0])
-            plt.title('2-class Precision-Recall curve: AP={0:02f}, best_treshold = {0:02f}'.format(
-                    av
-                erage_precision, best_threshold))
-            plt..format(()
-        
-np.save(
-            os.path.join(self._output_folder, '{}_evalauator.npy'.format(self._signature)),
-            {'cfg':self._cfg, 'precisions': p
-                        recision, 'recalls': recall, 'average_precisio {n': average_precision, 'best_threshold': best_threshold}
-           )               
+            plt.title('2-class Precision-Recall curve: AP={0:02f}, best_threshold = {0:02f}'.format(
+                    average_precision, best_threshold))
+            plt.show()
+            
+        np.save(os.path.join(self._output_folder, '{}_evaluator.npy'.format(self._signature)),
+            {'cfg':self._cfg, 'precisions': precision, 'recalls': recall, 'average_precision': average_precision, 'best_threshold': best_threshold})               
                             
-                            
-                            
-                            
-                 })
         return average_precision, best_threshold
     
-def metric_coverage_success_rate(self, grasps_list, scores_list, flex_outcomes_list, gt_grasps_list, visualize):
-        """
-                                    
-                                    
+    def metric_coverage_success_rate(self, grasps_list, scores_list, flex_outcomes_list, gt_grasps_list, visualize):
+        """                                
         Computes the coverage success rate for grasps of multiple objects.
 
         Args:
@@ -405,15 +351,14 @@ def metric_coverage_success_rate(self, grasps_list, scores_list, flex_outcomes_l
             tot_num_gt_grasps += gt_grasps.shape[0]
 
             for g, s, f in zip(grasps_list[i], scores_list[i], flex_outcomes_list[i]):
-                all_grasps.append(np.asarray(g).copy())
-                              
+                all_grasps.append(np.asarray(g).copy())                   
                 all_object_indexes.append(i)
                 all_scores.append(s)
                 all_flex_outcomes.append(f)
         
-all_grasps = np.asarray(all_grasps)
+        all_grasps = np.asarray(all_grasps)
         
-all_scores = np.asarray(all_scores)
+        all_scores = np.asarray(all_scores)
         order = np.argsort(-all_scores)
         num_covered_so_far = 0
         correct_grasps_so_far = 0
@@ -426,19 +371,18 @@ all_scores = np.asarray(all_scores)
         for oindex, index in enumerate(order):
             if oindex % 1000 == 0:
                 print(oindex, len(order))
-            
-object_id = all_object_indexes[index]
-            close_indexes = all_trees[object_id].query_ball_point(all_grasps[index, :3, 3], RADIUS)
 
-                
+            object_id = all_object_indexes[index]
+            close_indexes = all_trees[object_id].query_ball_point(all_grasps[index, :3, 3], RADIUS)
+    
             num_new_covered_gt_grasps = 0
 
             for close_index in close_indexes:
                 key = (object_id, close_index)
                 if key in visited:
                     continue
-                
-visited.add(key)
+
+                visited.add(key)
                 num_new_covered_gt_grasps += 1
 
             correct_grasps_so_far += all_flex_outcomes[index]
@@ -446,22 +390,18 @@ visited.add(key)
             num_covered_so_far += num_new_covered_gt_grasps
 
             if prev_score is not None and abs(prev_score - all_scores[index]) < 1e-3:
-                precisions[-1] = float(correct_grasps_so_f
-                                             ar) / num_visited_grasps_so_far
-                recalls[-1] = float(num
-                    _covered_so_far) / tot_num_gt_grasps
+                precisions[-1] = float(correct_grasps_so_far) / num_visited_grasps_so_far
+                recalls[-1] = float(num_covered_so_far) / tot_num_gt_grasps
             else:
                 precisions.append(float(correct_grasps_so_far) / num_visited_grasps_so_far)
-                recalls.append(flo
-                    at(num_covered_so_far) / tot_num_gt_grasps)
+                recalls.append(float(num_covered_so_far) / tot_num_gt_grasps)
                 prev_score = all_scores[index]
-        
-auc = 0
+                
+        auc = 0
         for i in range(1, len(precisions)):
             auc += (recalls[i] - recalls[i-1]) * (precisions[i] + precisions[i-1]) * 0.5
-          
-                                                     
-if visualize:
+
+        if visualize:
             import matplotlib.pyplot as plt
             plt.plot(recalls, precisions)
             plt.title('auc = {0:02f}'.format(auc))
@@ -469,21 +409,14 @@ if visualize:
             plt.xlim([0.0, 1.0])
             plt.show()
         
-print('auc = {}'.format(auc))
+        print('auc = {}'.format(auc))
         np.save(
             os.path.join(self._output_folder, '{}_vae+evaluator.npy'.format(self._signature)),
-            {'precisions': precisions, 'recal
-                        ls': recalls, 'auc': auc, 'cfg': self._cfg} {
-        )                 
-                            
-                            
-                            
-                         })
-return auc
+            {'precisions': precisions, 'recalls': recalls, 'auc': auc, 'cfg': self._cfg})
+        return auc
 
-def eval_grasps_on_flex(self, grasps, cad_path, cad_scale, experiment_folder):
+    def eval_grasps_on_flex(self, grasps, cad_path, cad_scale, experiment_folder):
         """
-                           
         Evaluates the graps on flex physics engine and determines whether the
         grasps will succeed or not.
 
@@ -512,9 +445,10 @@ if __name__ == '__main__':
     
     grasp_sampler_args = utils.read_checkpoint_args(args.grasp_sampler_folder)
     grasp_sampler_args.is_train = False
-    grasp_evaluator_args = utils.read_checkpoint_args(
-        args.grasp_evaluator_folder)
+    grasp_evaluator_args = utils.read_checkpoint_args(args.grasp_evaluator_folder)
     grasp_evaluator_args.continue_train = True
+    grasp_collision_args = utils.read_checkpoint_args(args.grasp_collision_folder)
+    grasp_collision_args.continue_train = True
     if args.gradient_based_refinement:
         args.num_refine_steps = 10
         args.refinement = "gradient"
@@ -523,7 +457,8 @@ if __name__ == '__main__':
         args.refinement = "sampling"
  
     estimator = grasp_estimator.GraspEstimator(grasp_sampler_args,
-                                               grasp_evaluator_args, args)
+                                               grasp_evaluator_args,
+                                               grasp_collision_args, args)
     evaluator = Evaluator(
         cfg,
         args.generate_data_if_missing,

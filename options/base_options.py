@@ -20,6 +20,10 @@ class BaseOptions:
             default=
             '/home/jens/Documents/datasets/grasping/unified_grasp_data/',
             help='path to root directory of the dataset.')
+        self.parser.add_argument(
+            '--sceneset_root_folder',
+            type=str,
+            default=None)
         self.parser.add_argument('--num_objects_per_batch',
                                  type=int,
                                  default=1,
@@ -48,7 +52,7 @@ class BaseOptions:
                                  default=0.0)  # to be used in the data reader.
         self.parser.add_argument('--num_grasp_clusters', type=int, default=32)
         self.parser.add_argument('--arch',
-                                 choices={"vae", "gan", "evaluator"},
+                                 choices={"vae", "gan", "evaluator", "collision"},
                                  default='vae')
         self.parser.add_argument('--max_dataset_size',
                                  type=int,

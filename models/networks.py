@@ -80,6 +80,9 @@ def define_classifier(opt, gpu_ids, arch, init_type, init_gain, device):
     elif arch == 'evaluator':
         net = GraspEvaluator(opt.model_scale, opt.pointnet_radius,
                              opt.pointnet_nclusters, device)
+    elif arch == 'collision':
+        net = CollisionNet(opt.model_scale, opt.pointnet_radius,
+                           opt.pointnet_nclusters, device)
     else:
         raise NotImplementedError('model name [%s] is not recognized' % arch)
     return init_net(net, init_type, init_gain, gpu_ids)
@@ -93,7 +96,7 @@ def define_loss(opt):
     elif opt.arch == 'gan':
         reconstruction_loss = losses.min_distance_loss
         return reconstruction_loss
-    elif opt.arch == 'evaluator':
+    elif opt.arch == 'evaluator' or opt.arch == 'collision':
         loss = losses.classification_with_confidence_loss
         return loss
     else:
@@ -326,7 +329,65 @@ class GraspEvaluator(nn.Module):
                               -1).transpose(-1, 1)
         return l0_xyz, l0_points
 
+class CollisionNet(nn.Module):
+    def __init__(self,
+                 model_scale=1,
+                 pointnet_radius=0.02,
+                 pointnet_nclusters=128,
+                 device="cpu"):
+        super(CollisionNet, self).__init__()
+        self.create_evaluator(pointnet_radius, model_scale, pointnet_nclusters)
+        self.device = device
 
+    def create_evaluator(self, pointnet_radius, model_scale,
+                         pointnet_nclusters):
+        # The number of input features for the evaluator is 4: the x, y, z
+        # position of the concatenated gripper and object point-clouds and an
+        # extra binary feature, which is 0 for the object/scene and 1 for the gripper,
+        # to tell these point-clouds apart
+        self.evaluator = base_network(pointnet_radius, pointnet_nclusters,
+                                      model_scale, 4)
+        self.predictions_logits = nn.Linear(1024 * model_scale, 1)
+        self.confidence = nn.Linear(1024 * model_scale, 1)
+
+    def evaluate(self, xyz, xyz_features):
+        for module in self.evaluator[0]:
+            xyz, xyz_features = module(xyz, xyz_features)
+        return self.evaluator[1](xyz_features.squeeze(-1))
+
+    def forward(self, pc, gripper_pc, train=True):
+        pc, pc_features = self.merge_pc_and_gripper_pc(pc, gripper_pc)
+        x = self.evaluate(pc, pc_features.contiguous())
+        return self.predictions_logits(x), torch.sigmoid(self.confidence(x))
+
+    def merge_pc_and_gripper_pc(self, pc, gripper_pc):
+        """
+        Merges the object point cloud and gripper point cloud and
+        adds a binary auxiliary feature that indicates whether each point
+        belongs to the object or to the gripper.
+        """
+        pc_shape = pc.shape
+        gripper_shape = gripper_pc.shape
+        assert (len(pc_shape) == 3)
+        assert (len(gripper_shape) == 3)
+        assert (pc_shape[0] == gripper_shape[0])
+
+        npoints = pc_shape[1]
+        batch_size = pc_shape[0]
+
+        l0_xyz = torch.cat((pc, gripper_pc), 1)
+        labels = [
+            torch.ones(pc.shape[1], 1, dtype=torch.float32),
+            torch.zeros(gripper_pc.shape[1], 1, dtype=torch.float32)
+        ]
+        labels = torch.cat(labels, 0)
+        labels.unsqueeze_(0)
+        labels = labels.repeat(batch_size, 1, 1)
+
+        l0_points = torch.cat([l0_xyz, labels.to(self.device)],
+                              -1).transpose(-1, 1)
+        return l0_xyz, l0_points
+    
 def base_network(pointnet_radius, pointnet_nclusters, scale, in_features):
     sa1_module = pointnet2.PointnetSAModule(
         npoint=pointnet_nclusters,

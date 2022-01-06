@@ -16,14 +16,16 @@ class GraspEstimator:
     """
       Includes the code used for running the inference.
     """
-    def __init__(self, grasp_sampler_opt, grasp_evaluator_opt, opt):
+    def __init__(self, grasp_sampler_opt, grasp_evaluator_opt, grasp_collision_opt, opt):
         self.grasp_sampler_opt = grasp_sampler_opt
         self.grasp_evaluator_opt = grasp_evaluator_opt
+        self.grasp_collision_opt = grasp_collision_opt
         self.opt = opt
         self.target_pc_size = opt.target_pc_size
         self.num_refine_steps = opt.refine_steps
         self.refine_method = opt.refinement_method
         self.threshold = opt.threshold
+        self.collision_threshold = opt.collision_threshold
         self.batch_size = opt.batch_size
         self.generate_dense_grasps = opt.generate_dense_grasps
         if self.generate_dense_grasps:
@@ -43,6 +45,7 @@ class GraspEstimator:
         self.device = torch.device("cuda:0")
         self.grasp_evaluator = create_model(grasp_evaluator_opt)
         self.grasp_sampler = create_model(grasp_sampler_opt)
+        self.grasp_collision = create_model(grasp_collision_opt)
 
     def keep_inliers(self, grasps, confidences, z, pc, inlier_indices_list):
         for i, inlier_indices in enumerate(inlier_indices_list):
@@ -51,19 +54,23 @@ class GraspEstimator:
             z[i] = z[i][inlier_indices]
             pc[i] = pc[i][inlier_indices]
 
-    def generate_and_refine_grasps(
-        self,
-        pc,
-    ):
+    def generate_and_refine_grasps(self, pc, scenepc=None, collisionnet=False):
+        '''
+        args
+            pc: pointcloud of target object
+            scenepc: pointcloud of entire cluttered scene
+            collisionnet (bool): whether or not to additionally evaluate grasps with CollisionNet
+        '''
+        # Generate grasps
         pc_list, pc_mean = self.prepare_pc(pc)
         grasps_list, confidence_list, z_list = self.generate_grasps(pc_list)
         inlier_indices = utils.get_inlier_grasp_indices(grasps_list,
-                                                        torch.zeros(1, 3).to(
-                                                            self.device),
+                                                        torch.zeros(1, 3).to(self.device),
                                                         threshold=1.0,
                                                         device=self.device)
-        self.keep_inliers(grasps_list, confidence_list, z_list, pc_list,
-                          inlier_indices)
+        self.keep_inliers(grasps_list, confidence_list, z_list, pc_list, inlier_indices)
+
+        # Run evaluation-refinement loop
         improved_eulers, improved_ts, improved_success = [], [], []
         for pc, grasps in zip(pc_list, grasps_list):
             out = self.refine_grasps(pc, grasps, self.refine_method,
@@ -87,7 +94,30 @@ class GraspEstimator:
         refine_indexes, sample_indexes = np.where(selection_mask)
         success_prob = improved_success[refine_indexes,
                                         sample_indexes].tolist()
-        return grasps, success_prob
+        cn_success_prob = None
+        
+        # If using CollisionNet, run evalnet selected grasps through CollisionNet
+        if collisionnet:
+            if scenepc is None:
+                raise ValueError('cluttered scene point clouds must be provided for CollisionNet')
+            scenepc_list, scenepc_mean = self.prepare_pc(scenepc)
+            evalgrasps_list = grasps.tolist()
+            eulers, ts, success = [], [], []
+            for scene, grasps in zip(scenepc_list, evalgrasps_list):
+                out = self.collision_net(scene, grasps)
+                eulers.append(out[0])
+                ts.append(out[1])
+                success.append(out[2])
+            eulers = np.hstack(eulers)
+            ts = np.hstack(ts)
+            success = np.hstack(success)
+            cn_selection_mask = self.choose_fns[self.choose_fn](eulers, ts, success, self.collision_threshold)
+            grasps = utils.rot_and_trans_to_grasps(eulers, ts, cn_selection_mask)
+            utils.denormalize_grasps(grasps, scenepc_mean)
+            cn_indexes, sample_indexes = np.where(cn_selection_mask)
+            cn_success_prob = success[cn_indexes, sample_indexes].tolist()
+            
+        return grasps, success_prob, cn_success_prob
 
     def prepare_pc(self, pc):
         if pc.shape[0] > self.target_pc_size:
@@ -124,17 +154,23 @@ class GraspEstimator:
         return all_grasps, all_confidence, all_z
 
     def refine_grasps(self, pc, grasps, refine_method, num_refine_steps=10):
-
+        '''
+        Runs refinement loop between refinement and grasp evaluator network
+        Args
+            pc: pointcloud of object
+            grasps: gripper grasps (in what reference frame?)
+            refine_method (str): 'gradient' for grad based refinement, else Metropolis-Hasting (sample based)
+            num_refine_steps (int)
+        Returns
+            euler of each gripper pose
+            translate of each gripper pose
+            success rating of each gripper pose
+        '''
         grasp_eulers, grasp_translations = utils.convert_qt_to_rt(grasps)
         if refine_method == "gradient":
             improve_fun = self.improve_grasps_gradient_based
-            grasp_eulers = torch.autograd.Variable(grasp_eulers.to(
-                self.device),
-                                                   requires_grad=True)
-            grasp_translations = torch.autograd.Variable(grasp_translations.to(
-                self.device),
-                                                         requires_grad=True)
-
+            grasp_eulers = torch.autograd.Variable(grasp_eulers.to(self.device), requires_grad=True)
+            grasp_translations = torch.autograd.Variable(grasp_translations.to(self.device), requires_grad=True)
         else:
             improve_fun = self.improve_grasps_sampling_based
 
@@ -155,22 +191,19 @@ class GraspEstimator:
         # we need to run the success on the final improved grasps
         grasp_pcs = utils.control_points_from_rot_and_trans(
             grasp_eulers, grasp_translations, self.device)
-        improved_success.append(
-            self.grasp_evaluator.evaluate_grasps(
-                pc, grasp_pcs).squeeze().cpu().data.numpy())
+        improved_success.append(self.grasp_evaluator.evaluate_grasps(pc, grasp_pcs).squeeze().cpu().data.numpy())
 
-        return np.asarray(improved_eulers), np.asarray(
-            improved_ts), np.asarray(improved_success)
+        return np.asarray(improved_eulers), np.asarray(improved_ts), np.asarray(improved_success)
 
-    def improve_grasps_gradient_based(
-        self, pcs, grasp_eulers, grasp_trans, last_success
-    ):  #euler_angles, translation, eval_and_improve, metadata):
-        grasp_pcs = utils.control_points_from_rot_and_trans(
-            grasp_eulers, grasp_trans, self.device)
+    def improve_grasps_gradient_based(self,
+                                      pcs,
+                                      grasp_eulers,
+                                      grasp_trans,
+                                      last_success):  #euler_angles, translation, eval_and_improve, metadata):
+        grasp_pcs = utils.control_points_from_rot_and_trans(grasp_eulers, grasp_trans, self.device)
 
         success = self.grasp_evaluator.evaluate_grasps(pcs, grasp_pcs)
-        success.squeeze().backward(
-            torch.ones(success.shape[0]).to(self.device))
+        success.squeeze().backward(torch.ones(success.shape[0]).to(self.device))
         delta_t = grasp_trans.grad
         norm_t = torch.norm(delta_t, p=2, dim=-1).to(self.device)
         # Adjust the alpha so that it won't update more than 1 cm. Gradient is only valid
@@ -216,3 +249,13 @@ class GraspEstimator:
             grasp_trans[ind].data = perturbed_translation.data[ind]
             grasp_eulers[ind].data = perturbed_euler_angles.data[ind]
             return last_success.squeeze(), next_success
+
+    def collision_net(self, clutter_pc, grasps):
+        success, eulers, ts = [], [], []
+        grasp_eulers, grasp_translations = utils.convert_qt_to_rt(grasps)
+        eulers.append(grasp_eulers.cpu().data.numpy())
+        ts.append(grasp_translations.cpu().data.numpy())
+        grasp_pcs = utils.control_points_from_rot_and_trans(grasp_eulers, grasp_translations, self.device)
+        success.append(self.grasp_collision.evaluate_grasps(clutter_pc, grasp_pcs))
+
+        return np.asarray(eulers), np.asarray(ts), np.asarray(success)

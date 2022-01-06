@@ -17,7 +17,10 @@ class GraspEvaluatorData(BaseDataset):
         self.opt = opt
         self.device = torch.device('cuda:{}'.format(
             opt.gpu_ids[0])) if opt.gpu_ids else torch.device('cpu')
-        self.root = opt.dataset_root_folder
+        if opt.arch == 'evaluator':            
+            self.root = opt.dataset_root_folder
+        elif opt.arch == 'collision':
+            self.root = opt.sceneset_root_folder
         self.paths = self.make_dataset()
         self.size = len(self.paths)
         self.collision_hard_neg_queue = {}
