@@ -1,6 +1,6 @@
 from __future__ import print_function
 
-import mayavi.mlab as mlab
+#import mayavi.mlab as mlab
 from utils import utils, sample
 import numpy as np
 import trimesh
@@ -17,7 +17,7 @@ def get_color_plasma(x):
 
 def plot_mesh(mesh):
     assert type(mesh) == trimesh.base.Trimesh
-    mlab.triangular_mesh(mesh.vertices[:, 0],
+    #mlab.triangular_mesh(mesh.vertices[:, 0],
                          mesh.vertices[:, 1],
                          mesh.vertices[:, 2],
                          mesh.faces,
@@ -84,7 +84,7 @@ def draw_scene(pc,
                 plot_mesh(elem)
         else:
             plot_mesh(mesh)
-
+    '''
     if pc_color is None and pc is not None:
         if plasma_coloring:
             mlab.points3d(pc[:, 0],
@@ -109,13 +109,13 @@ def draw_scene(pc,
             rgba = np.zeros((pc.shape[0], 4), dtype=np.uint8)
             rgba[:, :3] = np.asarray(pc_color)
             rgba[:, 3] = 255
-            src = mlab.pipeline.scalar_scatter(pc[:, 0], pc[:, 1], pc[:, 2])
-            src.add_attribute(rgba, 'colors')
-            src.data.point_data.set_active_scalars('colors')
-            g = mlab.pipeline.glyph(src)
-            g.glyph.scale_mode = "data_scaling_off"
-            g.glyph.glyph.scale_factor = 0.01
-
+            #src = mlab.pipeline.scalar_scatter(pc[:, 0], pc[:, 1], pc[:, 2])
+            #src.add_attribute(rgba, 'colors')
+            #src.data.point_data.set_active_scalars('colors')
+            #g = mlab.pipeline.glyph(src)
+            #g.glyph.scale_mode = "data_scaling_off"
+            #g.glyph.glyph.scale_factor = 0.01
+    '''
     grasp_pc = np.squeeze(utils.get_control_point_tensor(1, False), 0)
     grasp_pc[2, 2] = 0.059
     grasp_pc[3, 2] = 0.059
@@ -197,18 +197,18 @@ def draw_scene(pc,
             gripper_mesh = sample.Object(
                 'gripper_models/panda_gripper.obj').mesh
             gripper_mesh.apply_transform(g)
-            mlab.triangular_mesh(
-                gripper_mesh.vertices[:, 0],
-                gripper_mesh.vertices[:, 1],
-                gripper_mesh.vertices[:, 2],
-                gripper_mesh.faces,
-                color=gripper_color,
-                opacity=1 if visualize_diverse_grasps else 0.5)
+            #mlab.triangular_mesh(
+            #    gripper_mesh.vertices[:, 0],
+            #    gripper_mesh.vertices[:, 1],
+            #    gripper_mesh.vertices[:, 2],
+            #    gripper_mesh.faces,
+            #    color=gripper_color,
+            #    opacity=1 if visualize_diverse_grasps else 0.5)
         else:
             pts = np.matmul(grasp_pc, g[:3, :3].T)
             pts += np.expand_dims(g[:3, 3], 0)
             if isinstance(gripper_color, list):
-                mlab.plot3d(pts[:, 0],
+                #mlab.plot3d(pts[:, 0],
                             pts[:, 1],
                             pts[:, 2],
                             color=gripper_color[i],
@@ -216,18 +216,19 @@ def draw_scene(pc,
                             opacity=1)
             else:
                 tube_radius = 0.001
-                mlab.plot3d(pts[:, 0],
-                            pts[:, 1],
-                            pts[:, 2],
-                            color=gripper_color,
-                            tube_radius=tube_radius,
-                            opacity=1)
+                #mlab.plot3d(pts[:, 0],
+                #            pts[:, 1],
+                #            pts[:, 2],
+                #            color=gripper_color,
+                #            tube_radius=tube_radius,
+                #            opacity=1)
                 if target_cps is not None:
-                    mlab.points3d(target_cps[ii, :, 0],
-                                  target_cps[ii, :, 1],
-                                  target_cps[ii, :, 2],
-                                  color=(1.0, 0.0, 0),
-                                  scale_factor=0.01)
+                    pass
+                    #mlab.points3d(target_cps[ii, :, 0],
+                    #              target_cps[ii, :, 1],
+                    #              target_cps[ii, :, 2],
+                    #              color=(1.0, 0.0, 0),
+                    #              scale_factor=0.01)
 
     print('removed {} similar grasps'.format(removed))
 

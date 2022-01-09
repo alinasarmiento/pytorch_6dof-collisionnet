@@ -1,5 +1,5 @@
 try:
-    import mayavi.mlab as mlab
+    #import mayavi.mlab as mlab
     from visualization_utils import draw_scene
     import matplotlib.pyplot as plt
 except:
@@ -63,6 +63,6 @@ def propose_grasps(pc, radius, num_grasps=1, vis=False):
 
     if vis:
         draw_scene(pc, grasps=output_grasps)
-        mlab.show()
+        #mlab.show()
 
     return np.asarray(output_grasps)

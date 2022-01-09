@@ -6,9 +6,8 @@ import grasp_estimator
 import sys
 import os
 import glob
-import mayavi.mlab as mlab
+#import mayavi.mlab as mlab
 from utils.visualization_utils import *
-import mayavi.mlab as mlab
 from utils import utils
 from data import DataLoader
 
@@ -140,12 +139,12 @@ def main(args):
         for i, data in enumerate(dataset):
             generated_grasps, generated_scores = estimator.generate_and_refine_grasps(
                 data["pc"].squeeze())
-            mlab.figure(bgcolor=(1, 1, 1))
+            #mlab.figure(bgcolor=(1, 1, 1))
             draw_scene(data["pc"][0],
                        grasps=generated_grasps,
                        grasp_scores=generated_scores)
             print('close the window to continue to next object . . .')
-            mlab.show()
+            #mlab.show()
     else:
         for npy_file in glob.glob(os.path.join(args.npy_folder, '*.npy')):
             # Depending on your numpy version you may need to change allow_pickle
@@ -177,7 +176,7 @@ def main(args):
             object_pc = data['smoothed_object_pc']
             generated_grasps, generated_scores = estimator.generate_and_refine_grasps(
                 object_pc)
-            mlab.figure(bgcolor=(1, 1, 1))
+            #mlab.figure(bgcolor=(1, 1, 1))
             draw_scene(
                 pc,
                 pc_color=pc_colors,
@@ -185,7 +184,7 @@ def main(args):
                 grasp_scores=generated_scores,
             )
             print('close the window to continue to next object . . .')
-            mlab.show()
+            #mlab.show()
 
 
 if __name__ == '__main__':

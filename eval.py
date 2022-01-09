@@ -151,17 +151,17 @@ class Evaluator():
         
         if visualize:
             from visualization_utils import draw_scene
-            import mayavi.mlab as mlab
+            #import mayavi.mlab as mlab
 
             pos_mask = np.logical_and(grasp_labels == 1, np.random.rand(*grasp_labels.shape) < 0.1)
             neg_mask = np.logical_and(grasp_labels == 0, np.random.rand(*grasp_labels.shape) < 0.01)        
                
             print(grasps[pos_mask, :, :].shape, grasps[neg_mask, :, :].shape)
             draw_scene(pc, grasps[pos_mask, :, :])
-            mlab.show()
+            #mlab.show()
 
             draw_scene(pc, grasps[neg_mask, :, :])
-            mlab.show()
+            #mlab.show()
 
         return pc[:, :3], '''TO-DO: SCENEPC,''' grasps, grasp_labels, {'cad_path': obj_grasp_data[-2], 'cad_scale': obj_grasp_data[-1], 'to_canonical_transformation': grasp_data_reader.inverse_transform(camera_pose)}
     
@@ -206,13 +206,13 @@ class Evaluator():
             
             if visualize:
                 from visualization_utils import draw_scene
-                import mayavi.mlab as mlab
+                #import mayavi.mlab as mlab
 
                 draw_scene(canonical_pc, grasps=gt_pos_grasps_canonical, mesh=mesh)
-                mlab.show()
+                #mlab.show()
 
                 draw_scene(canonical_pc + mesh_mean, grasps=generated_grasps_canonical, mesh=mesh, grasp_scores=collisionscores)
-                mlab.show()
+                #mlab.show()
             
             full_results = (generated_grasps_canonical, evalscores, collisionscores, gt_pos_grasps_canonical, flex_info['cad_path'], flex_info['cad_scale'])               
                            
