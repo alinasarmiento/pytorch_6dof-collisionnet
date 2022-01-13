@@ -18,10 +18,10 @@ def get_color_plasma(x):
 def plot_mesh(mesh):
     assert type(mesh) == trimesh.base.Trimesh
     #mlab.triangular_mesh(mesh.vertices[:, 0],
-                         mesh.vertices[:, 1],
-                         mesh.vertices[:, 2],
-                         mesh.faces,
-                         colormap='Blues')
+    #                     mesh.vertices[:, 1],
+    #                     mesh.vertices[:, 2],
+    #                     mesh.faces,
+    #                     colormap='Blues')
 
 
 def draw_scene(pc,
@@ -208,12 +208,13 @@ def draw_scene(pc,
             pts = np.matmul(grasp_pc, g[:3, :3].T)
             pts += np.expand_dims(g[:3, 3], 0)
             if isinstance(gripper_color, list):
+                pass
                 #mlab.plot3d(pts[:, 0],
-                            pts[:, 1],
-                            pts[:, 2],
-                            color=gripper_color[i],
-                            tube_radius=0.003,
-                            opacity=1)
+                #            pts[:, 1],
+                #            pts[:, 2],
+                #            color=gripper_color[i],
+                #            tube_radius=0.003,
+                #            opacity=1)
             else:
                 tube_radius = 0.001
                 #mlab.plot3d(pts[:, 0],

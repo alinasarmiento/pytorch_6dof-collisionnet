@@ -7,7 +7,7 @@ import json
 from utils.sample import Object
 from utils import utils
 import glob
-from renderer.online_object_renderer import OnlineObjectRenderer
+#from renderer.online_object_renderer import OnlineObjectRenderer
 import threading
 
 

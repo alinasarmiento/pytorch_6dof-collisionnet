@@ -130,7 +130,7 @@ def main(args):
         args.grasp_evaluator_folder)
     grasp_evaluator_args.continue_train = True
     estimator = grasp_estimator.GraspEstimator(grasp_sampler_args,
-                                               grasp_evaluator_args, args)
+            grasp_evaluator_args, False, None, args)
     if args.train_data:
         grasp_sampler_args.dataset_root_folder = args.dataset_root_folder
         grasp_sampler_args.num_grasps_per_object = 1
@@ -174,7 +174,7 @@ def main(args):
             # Smoothed pc comes from averaging the depth for 10 frames and removing
             # the pixels with jittery depth between those 10 frames.
             object_pc = data['smoothed_object_pc']
-            generated_grasps, generated_scores = estimator.generate_and_refine_grasps(
+            generated_grasps, generated_scores, _ = estimator.generate_and_refine_grasps(
                 object_pc)
             #mlab.figure(bgcolor=(1, 1, 1))
             draw_scene(

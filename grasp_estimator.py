@@ -16,16 +16,18 @@ class GraspEstimator:
     """
       Includes the code used for running the inference.
     """
-    def __init__(self, grasp_sampler_opt, grasp_evaluator_opt, grasp_collision_opt, opt):
+    def __init__(self, grasp_sampler_opt, grasp_evaluator_opt, collision_net, grasp_collision_opt, opt):
         self.grasp_sampler_opt = grasp_sampler_opt
         self.grasp_evaluator_opt = grasp_evaluator_opt
-        self.grasp_collision_opt = grasp_collision_opt
+        if collision_net:
+            self.grasp_collision_opt = grasp_collision_opt
         self.opt = opt
         self.target_pc_size = opt.target_pc_size
         self.num_refine_steps = opt.refine_steps
         self.refine_method = opt.refinement_method
         self.threshold = opt.threshold
-        self.collision_threshold = opt.collision_threshold
+        if collision_net:
+            self.collision_threshold = opt.collision_threshold
         self.batch_size = opt.batch_size
         self.generate_dense_grasps = opt.generate_dense_grasps
         if self.generate_dense_grasps:
@@ -45,7 +47,8 @@ class GraspEstimator:
         self.device = torch.device("cuda:0")
         self.grasp_evaluator = create_model(grasp_evaluator_opt)
         self.grasp_sampler = create_model(grasp_sampler_opt)
-        self.grasp_collision = create_model(grasp_collision_opt)
+        if collision_net:
+            self.grasp_collision = create_model(grasp_collision_opt)
 
     def keep_inliers(self, grasps, confidences, z, pc, inlier_indices_list):
         for i, inlier_indices in enumerate(inlier_indices_list):
