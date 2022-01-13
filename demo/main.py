@@ -137,7 +137,7 @@ def main(args):
         grasp_sampler_args.num_objects_per_batch = 1
         dataset = DataLoader(grasp_sampler_args)
         for i, data in enumerate(dataset):
-            generated_grasps, generated_scores = estimator.generate_and_refine_grasps(
+            generated_grasps, generated_scores, _ = estimator.generate_and_refine_grasps(
                 data["pc"].squeeze())
             #mlab.figure(bgcolor=(1, 1, 1))
             draw_scene(data["pc"][0],
